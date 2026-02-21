@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>心智圖製作工具</title>
+
+  <!-- CodeMirror 5 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/eclipse.css">
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/xml/xml.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/markdown/markdown.min.js"></script>
+
+  <!-- D3 & Markmap -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15"></script>
+  <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15"></script>
+
+  <!-- Marked -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-primary: #d0d4da;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #e8eaed;
+      --bg-hover: #dde1e7;
+      --bg-active: #fde8de;
+      --text-primary: #1a1a1a;
+      --text-secondary: #555555;
+      --text-muted: #999999;
+      --accent: #d97757;
+      --accent-hover: #c4694a;
+      --border: #d0d4da;
+      --danger: #d32f2f;
+      --success: #2e7d32;
+      --warning: #e65100;
+      --scrollbar-thumb: #bbbec4;
+      --scrollbar-track: transparent;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      overflow: hidden;
+    }
+
+    /* Layout */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* Toolbar */
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      height: 42px;
+    }
+
+    #toolbar .app-title {
+      font-size: 19.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-right: 12px;
+      white-space: nowrap;
+    }
+
+    .toolbar-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      height: 28px;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+
+    .toolbar-btn:hover {
+      background: var(--bg-hover);
+    }
+
+    .toolbar-btn:active {
+      background: var(--accent);
+    }
+
+    .toolbar-btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    .toolbar-btn.primary:hover {
+      background: var(--accent-hover);
+      color: #ffffff;
+    }
+
+    .toolbar-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .toolbar-separator {
+      width: 1px;
+      height: 20px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+
+    .mode-toggle {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .mode-toggle button {
+      padding: 4px 12px;
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      border: none;
+      cursor: pointer;
+      font-size: 12px;
+      height: 28px;
+      transition: all 0.15s;
+    }
+
+    .mode-toggle button:not(:last-child) {
+      border-right: 1px solid var(--border);
+    }
+
+    .mode-toggle button.active {
+      background: var(--accent);
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    .mode-toggle button:hover:not(.active) {
+      background: var(--bg-hover);
+    }
+
+    .toolbar-spacer {
+      flex: 1;
+    }
+
+    .toolbar-info {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    /* Main Content */
+    #main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    #sidebar {
+      width: 240px;
+      min-width: 200px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    #sidebar.collapsed {
+      width: 0;
+      min-width: 0;
+      overflow: hidden;
+      border-right: none;
+    }
+
+    .sidebar-header {
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-header h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    #search-input {
+      width: 100%;
+      padding: 4px 8px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-primary);
+      font-size: 12px;
+      outline: none;
+    }
+
+    #search-input:focus {
+      border-color: var(--accent);
+    }
+
+    #search-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    #file-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      padding: 4px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-primary);
+      transition: background 0.1s;
+      user-select: none;
+      gap: 6px;
+    }
+
+    .file-item:hover {
+      background: var(--bg-hover);
+    }
+
+    .file-item.active {
+      background: var(--bg-active);
+    }
+
+    .file-item .file-icon {
+      color: var(--text-secondary);
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .file-item .file-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    .file-item .file-path {
+      font-size: 10px;
+      color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-item .modified-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--warning);
+      flex-shrink: 0;
+    }
+
+    .sidebar-footer {
+      padding: 6px 12px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    /* Editor & Preview Area */
+    #workspace {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    #editor-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      border-right: 1px solid var(--border);
+      background: #ffffff;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      padding: 4px 12px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-secondary);
+      height: 28px;
+      flex-shrink: 0;
+    }
+
+    #editor-container {
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #editor-container .CodeMirror {
+      height: 100%;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    #preview-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: #ffffff;
+    }
+
+    #preview-container {
+      flex: 1;
+      overflow: auto;
+      position: relative;
+    }
+
+    /* Mindmap */
+    #mindmap-view {
+      width: 100%;
+      height: 100%;
+    }
+
+    #mindmap-view svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Markdown Preview */
+    #markdown-view {
+      padding: 24px 32px;
+      display: none;
+      max-width: 800px;
+    }
+
+    #markdown-view h1 { font-size: 2em; margin: 0.67em 0; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    #markdown-view h2 { font-size: 1.5em; margin: 0.83em 0; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    #markdown-view h3 { font-size: 1.17em; margin: 1em 0; }
+    #markdown-view h4 { font-size: 1em; margin: 1.33em 0; }
+    #markdown-view p { margin: 0.8em 0; line-height: 1.7; }
+    #markdown-view ul, #markdown-view ol { margin: 0.8em 0; padding-left: 2em; }
+    #markdown-view li { margin: 0.3em 0; line-height: 1.6; }
+    #markdown-view code {
+      background: var(--bg-tertiary);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 0.9em;
+      font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+    }
+    #markdown-view pre {
+      background: var(--bg-tertiary);
+      padding: 16px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 1em 0;
+    }
+    #markdown-view pre code {
+      padding: 0;
+      background: none;
+    }
+    #markdown-view blockquote {
+      border-left: 3px solid var(--accent);
+      padding-left: 16px;
+      margin: 1em 0;
+      color: var(--text-secondary);
+    }
+    #markdown-view a { color: var(--accent); text-decoration: none; }
+    #markdown-view a:hover { text-decoration: underline; }
+    #markdown-view table { border-collapse: collapse; margin: 1em 0; width: 100%; }
+    #markdown-view th, #markdown-view td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+    #markdown-view th { background: var(--bg-tertiary); }
+    #markdown-view img { max-width: 100%; border-radius: 4px; }
+    #markdown-view hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+
+    /* Welcome / Empty States */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 40px;
+    }
+
+    .empty-state .icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+
+    .empty-state h2 {
+      font-size: 18px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .empty-state p {
+      font-size: 13px;
+      max-width: 360px;
+      line-height: 1.5;
+    }
+
+    .empty-state .shortcut {
+      margin-top: 16px;
+      padding: 4px 10px;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-family: monospace;
+    }
+
+    /* Status Bar */
+    #statusbar {
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      background: var(--accent);
+      height: 24px;
+      flex-shrink: 0;
+      font-size: 11px;
+      color: #fff;
+      gap: 16px;
+    }
+
+    #statusbar .spacer {
+      flex: 1;
+    }
+
+    #statusbar .status-item {
+      white-space: nowrap;
+    }
+
+    /* Resize Handle */
+    .resize-handle {
+      width: 4px;
+      cursor: col-resize;
+      background: transparent;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .resize-handle:hover,
+    .resize-handle.dragging {
+      background: var(--accent);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--scrollbar-track);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--scrollbar-thumb);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #9a9da3;
+    }
+
+    /* Browser compatibility warning */
+    #compat-warning {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--bg-primary);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 40px;
+    }
+
+    #compat-warning h1 {
+      font-size: 24px;
+      margin-bottom: 16px;
+    }
+
+    #compat-warning p {
+      color: var(--text-secondary);
+      max-width: 480px;
+      line-height: 1.6;
+    }
+
+    /* Notification toast */
+    .toast {
+      position: fixed;
+      bottom: 40px;
+      right: 20px;
+      padding: 10px 20px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-primary);
+      font-size: 13px;
+      z-index: 999;
+      animation: toastIn 0.2s ease, toastOut 0.3s ease 1.7s forwards;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .toast.success { border-left: 3px solid var(--success); }
+    .toast.error { border-left: 3px solid var(--danger); }
+    .toast.warning { border-left: 3px solid var(--warning); }
+
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes toastOut {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+
+    /* SVG markmap light theme overrides */
+    #mindmap-view .markmap-node text {
+      fill: var(--text-primary);
+    }
+
+    #mindmap-view .markmap-foreign {
+      color: var(--text-primary) !important;
+      cursor: text;
+    }
+
+    #node-inline-editor {
+      position: fixed;
+      padding: 0 6px;
+      background: #fff;
+      border: 2px solid var(--accent);
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      outline: none;
+      z-index: 1000;
+      box-shadow: 0 2px 12px rgba(217,119,87,0.25);
+    }
+
+    #mindmap-view .markmap-foreign code {
+      color: #c7254e !important;
+      background-color: var(--bg-tertiary) !important;
+    }
+
+    #mindmap-view .markmap-foreign a {
+      color: var(--accent) !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="compat-warning">
+    <div>
+      <h1>瀏覽器不支援</h1>
+      <p>此應用程式需要 File System Access API，僅在 Chromium 系列瀏覽器（Chrome、Edge、Opera、Brave）上可用。</p>
+      <p style="margin-top:16px;">請使用 <strong>Google Chrome</strong> 或 <strong>Microsoft Edge</strong> 開啟此檔案。</p>
+    </div>
+  </div>
+
+  <div id="app">
+    <!-- Toolbar -->
+    <div id="toolbar">
+      <span class="app-title">MindMap Maker</span>
+      <button class="toolbar-btn primary" id="btn-open" title="開啟資料夾">
+        <span>&#128194;</span> 開啟資料夾
+      </button>
+      <button class="toolbar-btn" id="btn-save" disabled title="儲存 (Ctrl+S)">
+        <span>&#128190;</span> 儲存
+      </button>
+      <button class="toolbar-btn" id="btn-new" disabled title="新增檔案">
+        <span>&#43;</span> 新增
+      </button>
+      <div class="toolbar-separator"></div>
+      <div class="mode-toggle">
+        <button id="mode-mindmap" class="active" title="心智圖檢視">心智圖</button>
+        <button id="mode-markdown" title="文章預覽">檢視文章</button>
+      </div>
+      <div class="toolbar-separator"></div>
+      <button class="toolbar-btn" id="btn-sidebar-toggle" title="Toggle Sidebar">
+        <span>&#9776;</span>
+      </button>
+      <div class="toolbar-spacer"></div>
+      <span class="toolbar-info" id="toolbar-info"></span>
+    </div>
+
+    <!-- Main Content -->
+    <div id="main">
+      <!-- Sidebar -->
+      <div id="sidebar">
+        <div class="sidebar-header">
+          <h3>檔案</h3>
+          <input type="text" id="search-input" placeholder="搜尋檔案..." />
+        </div>
+        <div id="file-list">
+          <div class="empty-state" id="sidebar-empty">
+            <p>開啟資料夾以瀏覽 .md 檔案</p>
+          </div>
+        </div>
+        <div class="sidebar-footer" id="sidebar-footer" style="display:none;">
+          <span id="file-count">0 files</span>
+        </div>
+      </div>
+
+      <!-- Workspace -->
+      <div id="workspace">
+        <!-- Editor Panel -->
+        <div id="editor-panel">
+          <div class="panel-header">
+            <span id="editor-title">編輯器</span>
+          </div>
+          <div id="editor-container">
+            <div class="empty-state" id="editor-empty">
+              <div class="icon">&#128196;</div>
+              <h2>尚未開啟檔案</h2>
+              <p>開啟資料夾並從側欄選擇 .md 檔案，或點擊下方按鈕。</p>
+              <button class="toolbar-btn primary" style="margin-top:16px;" onclick="openFolder()">開啟資料夾</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Resize Handle -->
+        <div class="resize-handle" id="resize-handle"></div>
+
+        <!-- Preview Panel -->
+        <div id="preview-panel">
+          <div class="panel-header">
+            <span id="preview-title">心智圖預覽</span>
+          </div>
+          <div id="preview-container">
+            <div id="mindmap-view">
+              <svg id="mindmap-svg"></svg>
+            </div>
+            <div id="markdown-view"></div>
+            <div class="empty-state" id="preview-empty">
+              <div class="icon">&#127760;</div>
+              <h2>預覽</h2>
+              <p>選擇檔案以在此查看心智圖或文章預覽。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div id="statusbar">
+      <span class="status-item" id="status-file">尚未開啟檔案</span>
+      <span class="spacer"></span>
+      <span class="status-item" id="status-modified"></span>
+      <span class="status-item" id="status-lines"></span>
+      <span class="status-item" id="status-words"></span>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================
+    // State
+    // =========================================================
+    let dirHandle = null;
+    let files = [];           // { name, path, handle }
+    let currentFile = null;   // reference to active file in files[]
+    let originalContent = ''; // content when loaded (for dirty check)
+    let editor = null;        // CodeMirror instance
+    let mm = null;            // Markmap instance
+    let transformer = null;   // Markmap Transformer
+    let previewMode = 'mindmap';
+    let previewTimeout = null;
+
+    // =========================================================
+    // DOM References
+    // =========================================================
+    const $app = document.getElementById('app');
+    const $sidebar = document.getElementById('sidebar');
+    const $fileList = document.getElementById('file-list');
+    const $sidebarEmpty = document.getElementById('sidebar-empty');
+    const $sidebarFooter = document.getElementById('sidebar-footer');
+    const $fileCount = document.getElementById('file-count');
+    const $searchInput = document.getElementById('search-input');
+    const $editorContainer = document.getElementById('editor-container');
+    const $editorEmpty = document.getElementById('editor-empty');
+    const $editorTitle = document.getElementById('editor-title');
+    const $previewContainer = document.getElementById('preview-container');
+    const $previewTitle = document.getElementById('preview-title');
+    const $previewEmpty = document.getElementById('preview-empty');
+    const $mindmapView = document.getElementById('mindmap-view');
+    const $mindmapSvg = document.getElementById('mindmap-svg');
+    const $markdownView = document.getElementById('markdown-view');
+    const $btnOpen = document.getElementById('btn-open');
+    const $btnSave = document.getElementById('btn-save');
+    const $btnNew = document.getElementById('btn-new');
+    const $modeMindmap = document.getElementById('mode-mindmap');
+    const $modeMarkdown = document.getElementById('mode-markdown');
+    const $btnSidebarToggle = document.getElementById('btn-sidebar-toggle');
+    const $toolbarInfo = document.getElementById('toolbar-info');
+    const $statusFile = document.getElementById('status-file');
+    const $statusModified = document.getElementById('status-modified');
+    const $statusLines = document.getElementById('status-lines');
+    const $statusWords = document.getElementById('status-words');
+
+    // =========================================================
+    // Compatibility Check
+    // =========================================================
+    if (!('showDirectoryPicker' in window)) {
+      document.getElementById('compat-warning').style.display = 'flex';
+    }
+
+    // =========================================================
+    // Toast Notification
+    // =========================================================
+    function showToast(message, type = 'success') {
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2200);
+    }
+
+    // =========================================================
+    // File System Access API
+    // =========================================================
+    async function openFolder() {
+      try {
+        dirHandle = await window.showDirectoryPicker();
+        files = [];
+        await scanDirectory(dirHandle, '');
+        files.sort((a, b) => a.path.localeCompare(b.path));
+        renderFileList();
+        $btnNew.disabled = false;
+        $toolbarInfo.textContent = dirHandle.name;
+        showToast(`已開啟：${dirHandle.name}（${files.length} 個檔案）`);
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          showToast('開啟資料夾失敗：' + err.message, 'error');
+        }
+      }
+    }
+
+    async function scanDirectory(handle, basePath) {
+      for await (const [name, entryHandle] of handle) {
+        const entryPath = basePath ? `${basePath}/${name}` : name;
+        if (entryHandle.kind === 'file' && name.endsWith('.md')) {
+          files.push({ name, path: entryPath, handle: entryHandle });
+        } else if (entryHandle.kind === 'directory') {
+          await scanDirectory(entryHandle, entryPath);
+        }
+      }
+    }
+
+    async function readFileContent(fileHandle) {
+      const file = await fileHandle.getFile();
+      return await file.text();
+    }
+
+    async function writeFileContent(fileHandle, content) {
+      const writable = await fileHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+    }
+
+    async function loadFile(fileInfo) {
+      if (currentFile && isModified()) {
+        const ok = confirm(`「${currentFile.name}」有未儲存的變更，確定要捨棄並切換嗎？`);
+        if (!ok) return;
+      }
+
+      try {
+        const content = await readFileContent(fileInfo.handle);
+        currentFile = fileInfo;
+        originalContent = content;
+
+
+        // Show editor, hide empty state
+        $editorEmpty.style.display = 'none';
+        if (!editor) {
+          initEditor();
+        }
+        editor.setValue(content);
+        editor.clearHistory();
+        editor.focus();
+
+        // Update UI
+        $editorTitle.textContent = fileInfo.name;
+        $previewEmpty.style.display = 'none';
+        updatePreview();
+        updateStatusBar();
+        updateFileListSelection();
+        $btnSave.disabled = true;
+      } catch (err) {
+        showToast('讀取檔案失敗：' + err.message, 'error');
+      }
+    }
+
+    async function saveFile() {
+      if (!currentFile || !editor) return;
+
+      try {
+        const content = editor.getValue();
+        await writeFileContent(currentFile.handle, content);
+        originalContent = content;
+        $btnSave.disabled = true;
+        updateStatusBar();
+        updateFileListSelection();
+        showToast('已儲存：' + currentFile.name);
+      } catch (err) {
+        showToast('儲存失敗：' + err.message, 'error');
+      }
+    }
+
+    async function createNewFile() {
+      if (!dirHandle) return;
+
+      const name = prompt('輸入檔案名稱（例如：notes.md）：');
+      if (!name) return;
+
+      const fileName = name.endsWith('.md') ? name : name + '.md';
+
+      try {
+        const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+        const defaultContent = `# ${fileName.replace('.md', '')}\n\n`;
+        await writeFileContent(fileHandle, defaultContent);
+
+        const fileInfo = { name: fileName, path: fileName, handle: fileHandle };
+        files.push(fileInfo);
+        files.sort((a, b) => a.path.localeCompare(b.path));
+        renderFileList();
+        await loadFile(fileInfo);
+        showToast('已建立：' + fileName);
+      } catch (err) {
+        showToast('建立檔案失敗：' + err.message, 'error');
+      }
+    }
+
+    // =========================================================
+    // Dirty Check
+    // =========================================================
+    function isModified() {
+      if (!editor || !currentFile) return false;
+      return editor.getValue() !== originalContent;
+    }
+
+    // =========================================================
+    // CodeMirror Editor
+    // =========================================================
+    function initEditor() {
+      editor = CodeMirror($editorContainer, {
+        mode: 'markdown',
+        theme: 'eclipse',
+        lineNumbers: true,
+        lineWrapping: true,
+        tabSize: 2,
+        indentWithTabs: false,
+        autofocus: true,
+        extraKeys: {
+          'Ctrl-S': () => saveFile(),
+          'Cmd-S': () => saveFile(),
+        }
+      });
+
+      editor.on('change', () => {
+        const modified = isModified();
+        $btnSave.disabled = !modified;
+        updateStatusBar();
+        updateFileListSelection();
+        schedulePreviewUpdate();
+      });
+    }
+
+    // =========================================================
+    // Preview
+    // =========================================================
+    function schedulePreviewUpdate() {
+      clearTimeout(previewTimeout);
+      previewTimeout = setTimeout(updatePreview, 300);
+    }
+
+    function updatePreview() {
+      if (!editor) return;
+      const content = editor.getValue();
+
+      if (previewMode === 'mindmap') {
+        renderMindmap(content);
+      } else {
+        renderMarkdown(content);
+      }
+    }
+
+    function renderMindmap(content) {
+      $mindmapView.style.display = 'block';
+      $markdownView.style.display = 'none';
+
+      if (!content.trim()) {
+        $mindmapSvg.innerHTML = '';
+        return;
+      }
+
+      try {
+        if (!transformer) {
+          transformer = new markmap.Transformer();
+        }
+
+        const { root } = transformer.transform(content);
+
+        if (!mm) {
+          // Clear SVG and create fresh
+          $mindmapSvg.innerHTML = '';
+          mm = markmap.Markmap.create($mindmapSvg, {
+            colorFreezeLevel: 2,
+            duration: 200,
+            maxWidth: 780,
+            paddingX: 16,
+            autoFit: false,
+          }, root);
+          mm.fit();
+        } else {
+          mm.setData(root);
+        }
+      } catch (err) {
+        console.error('Markmap render error:', err);
+      }
+    }
+
+    function renderMarkdown(content) {
+      $mindmapView.style.display = 'none';
+      $markdownView.style.display = 'block';
+
+      try {
+        $markdownView.innerHTML = marked.parse(content);
+      } catch (err) {
+        console.error('Markdown render error:', err);
+        $markdownView.innerHTML = '<p style="color:var(--danger)">Render error</p>';
+      }
+    }
+
+    function setPreviewMode(mode) {
+      previewMode = mode;
+
+      $modeMindmap.classList.toggle('active', mode === 'mindmap');
+      $modeMarkdown.classList.toggle('active', mode === 'markdown');
+      $previewTitle.textContent = mode === 'mindmap' ? '心智圖預覽' : '文章預覽';
+
+      // Reset mindmap instance when switching to force re-render
+      if (mode === 'mindmap') {
+        mm = null;
+        $mindmapSvg.innerHTML = '';
+      }
+
+      updatePreview();
+    }
+
+    // =========================================================
+    // File List UI
+    // =========================================================
+    function renderFileList(filter = '') {
+      const filtered = filter
+        ? files.filter(f => f.path.toLowerCase().includes(filter.toLowerCase()))
+        : files;
+
+      if (filtered.length === 0 && files.length === 0) {
+        $sidebarEmpty.style.display = 'flex';
+        $sidebarFooter.style.display = 'none';
+        $fileList.querySelectorAll('.file-item').forEach(el => el.remove());
+        return;
+      }
+
+      $sidebarEmpty.style.display = filtered.length === 0 ? 'flex' : 'none';
+      $sidebarFooter.style.display = 'block';
+      $fileCount.textContent = `${files.length} 個檔案`;
+
+      // Remove old items
+      $fileList.querySelectorAll('.file-item').forEach(el => el.remove());
+
+      for (const f of filtered) {
+        const el = document.createElement('div');
+        el.className = 'file-item';
+        if (currentFile && currentFile.path === f.path) {
+          el.classList.add('active');
+        }
+
+        const hasSubdir = f.path.includes('/');
+
+        el.innerHTML = `
+          <span class="file-icon">&#128196;</span>
+          <div style="overflow:hidden;flex:1;">
+            <div class="file-name">${f.name}</div>
+            ${hasSubdir ? `<div class="file-path">${f.path}</div>` : ''}
+          </div>
+          ${(currentFile && currentFile.path === f.path && isModified()) ? '<div class="modified-dot"></div>' : ''}
+        `;
+
+        el.addEventListener('click', () => loadFile(f));
+        $fileList.appendChild(el);
+      }
+    }
+
+    function updateFileListSelection() {
+      $fileList.querySelectorAll('.file-item').forEach((el, i) => {
+        const filtered = $searchInput.value
+          ? files.filter(f => f.path.toLowerCase().includes($searchInput.value.toLowerCase()))
+          : files;
+        if (i < filtered.length) {
+          const f = filtered[i];
+          const isActive = currentFile && currentFile.path === f.path;
+          el.classList.toggle('active', isActive);
+
+          // Update modified dot
+          const dot = el.querySelector('.modified-dot');
+          if (isActive && isModified()) {
+            if (!dot) {
+              const d = document.createElement('div');
+              d.className = 'modified-dot';
+              el.appendChild(d);
+            }
+          } else {
+            if (dot) dot.remove();
+          }
+        }
+      });
+    }
+
+    // =========================================================
+    // Status Bar
+    // =========================================================
+    function updateStatusBar() {
+      if (!currentFile) {
+        $statusFile.textContent = '尚未開啟檔案';
+        $statusModified.textContent = '';
+        $statusLines.textContent = '';
+        $statusWords.textContent = '';
+        return;
+      }
+
+      $statusFile.textContent = currentFile.path;
+      $statusModified.textContent = isModified() ? '已修改' : '';
+
+      if (editor) {
+        const content = editor.getValue();
+        const lines = content.split('\n').length;
+        const words = content.trim() ? content.trim().split(/\s+/).length : 0;
+        $statusLines.textContent = `第 ${lines} 行`;
+        $statusWords.textContent = `${words} 字`;
+      }
+    }
+
+    // =========================================================
+    // Resize Handle
+    // =========================================================
+    (function initResize() {
+      const handle = document.getElementById('resize-handle');
+      const editorPanel = document.getElementById('editor-panel');
+      let startX, startWidth;
+
+      handle.addEventListener('mousedown', (e) => {
+        startX = e.clientX;
+        startWidth = editorPanel.offsetWidth;
+        handle.classList.add('dragging');
+
+        const onMove = (e) => {
+          const dx = e.clientX - startX;
+          const newWidth = Math.max(200, startWidth + dx);
+          editorPanel.style.flex = 'none';
+          editorPanel.style.width = newWidth + 'px';
+        };
+
+        const onUp = () => {
+          handle.classList.remove('dragging');
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          // Refresh CodeMirror and mindmap after resize
+          if (editor) editor.refresh();
+          if (mm) mm.fit();
+        };
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    })();
+
+    // =========================================================
+    // Event Listeners
+    // =========================================================
+    $btnOpen.addEventListener('click', openFolder);
+    $btnSave.addEventListener('click', saveFile);
+    $btnNew.addEventListener('click', createNewFile);
+    $modeMindmap.addEventListener('click', () => setPreviewMode('mindmap'));
+    $modeMarkdown.addEventListener('click', () => setPreviewMode('markdown'));
+
+    $btnSidebarToggle.addEventListener('click', () => {
+      $sidebar.classList.toggle('collapsed');
+      if (editor) setTimeout(() => editor.refresh(), 200);
+      if (mm) setTimeout(() => mm.fit(), 200);
+    });
+
+    $searchInput.addEventListener('input', (e) => {
+      renderFileList(e.target.value);
+    });
+
+    // Global keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        saveFile();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+        e.preventDefault();
+        openFolder();
+      }
+    });
+
+    // Warn before closing with unsaved changes
+    window.addEventListener('beforeunload', (e) => {
+      if (isModified()) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
+
+    // Resize observer for mindmap
+    const resizeObserver = new ResizeObserver(() => {
+      if (mm) {
+        setTimeout(() => mm.fit(), 50);
+      }
+    });
+    resizeObserver.observe(document.getElementById('preview-container'));
+
+    // =========================================================
+    // Mindmap Inline Editing
+    // =========================================================
+    function stripInlineMarkdown(text) {
+      return text
+        .replace(/\*\*(.+?)\*\*/g, '$1')
+        .replace(/\*(.+?)\*/g, '$1')
+        .replace(/`(.+?)`/g, '$1')
+        .replace(/~~(.+?)~~/g, '$1')
+        .replace(/\[(.+?)\]\(.+?\)/g, '$1')
+        .trim();
+    }
+
+    function showNodeEditor(originalText, rect, foreignEl) {
+      const existing = document.getElementById('node-inline-editor');
+      if (existing) existing.remove();
+
+      const input = document.createElement('input');
+      input.id = 'node-inline-editor';
+      input.type = 'text';
+      input.value = originalText;
+      input.style.left   = (rect.left - 4) + 'px';
+      input.style.top    = (rect.top - 2) + 'px';
+      input.style.width  = Math.max(rect.width + 40, 160) + 'px';
+      input.style.height = (rect.height + 4) + 'px';
+
+      document.body.appendChild(input);
+      input.focus();
+      input.select();
+
+      let committed = false;
+
+      function commit() {
+        if (committed) return;
+        committed = true;
+        const newText = input.value.trim();
+        if (newText && newText !== originalText) {
+          foreignEl.textContent = newText;
+          updateMarkdownNode(originalText, newText);
+          clearTimeout(previewTimeout);
+        }
+        input.remove();
+      }
+
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter')  { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') { committed = true; input.remove(); }
+      });
+    }
+
+    function updateMarkdownNode(originalText, newText) {
+      if (!editor) return;
+      const lines = editor.getValue().split('\n');
+
+      for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(/^(#{1,6}\s+|\s*[-*+]\s+|\s*\d+\.\s+)(.*)/);
+        if (m && stripInlineMarkdown(m[2]) === originalText) {
+          editor.replaceRange(m[1] + newText, { line: i, ch: 0 }, { line: i, ch: lines[i].length });
+          break;
+        }
+      }
+    }
+
+    $mindmapView.addEventListener('click', (e) => {
+      if (previewMode !== 'mindmap') return;
+      const foreign = e.target.closest('.markmap-foreign');
+      if (!foreign) return;
+      e.stopPropagation();
+      showNodeEditor(
+        stripInlineMarkdown(foreign.textContent),
+        foreign.getBoundingClientRect(),
+        foreign
+      );
+    });
+  </script>
+</body>
+</html>
