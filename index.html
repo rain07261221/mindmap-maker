@@ -615,6 +615,9 @@
         <span>&#9776;</span>
       </button>
       <div class="toolbar-spacer"></div>
+      <button class="toolbar-btn" id="btn-collapse-all" title="縮合所有節點" disabled>⊖ 縮合全部</button>
+      <button class="toolbar-btn" id="btn-expand-all" title="展開所有節點" disabled>⊕ 展開全部</button>
+      <div class="toolbar-separator"></div>
       <span class="toolbar-info" id="toolbar-info"></span>
     </div>
 
@@ -699,6 +702,7 @@
     let transformer = null;   // Markmap Transformer
     let previewMode = 'mindmap';
     let previewTimeout = null;
+    let currentRoot = null;    // latest markmap root node
 
     // =========================================================
     // DOM References
@@ -725,6 +729,8 @@
     const $modeMindmap = document.getElementById('mode-mindmap');
     const $modeMarkdown = document.getElementById('mode-markdown');
     const $btnSidebarToggle = document.getElementById('btn-sidebar-toggle');
+    const $btnCollapseAll = document.getElementById('btn-collapse-all');
+    const $btnExpandAll = document.getElementById('btn-expand-all');
     const $toolbarInfo = document.getElementById('toolbar-info');
     const $statusFile = document.getElementById('status-file');
     const $statusModified = document.getElementById('status-modified');
@@ -924,6 +930,9 @@
 
       if (!content.trim()) {
         $mindmapSvg.innerHTML = '';
+        currentRoot = null;
+        $btnCollapseAll.disabled = true;
+        $btnExpandAll.disabled = true;
         return;
       }
 
@@ -933,6 +942,9 @@
         }
 
         const { root } = transformer.transform(content);
+        currentRoot = root;
+        $btnCollapseAll.disabled = false;
+        $btnExpandAll.disabled = false;
 
         if (!mm) {
           // Clear SVG and create fresh
@@ -976,6 +988,9 @@
       if (mode === 'mindmap') {
         mm = null;
         $mindmapSvg.innerHTML = '';
+      } else {
+        $btnCollapseAll.disabled = true;
+        $btnExpandAll.disabled = true;
       }
 
       updatePreview();
@@ -1112,9 +1127,36 @@
     // =========================================================
     // Event Listeners
     // =========================================================
+    // =========================================================
+    // Collapse / Expand All
+    // =========================================================
+    function collapseAll() {
+      if (!mm || !currentRoot) return;
+      (function fold(node, isRoot) {
+        if (!isRoot && node.children && node.children.length > 0) {
+          node.payload = node.payload || {};
+          node.payload.fold = 1;
+        }
+        if (node.children) node.children.forEach(c => fold(c, false));
+      })(currentRoot, true);
+      mm.setData(currentRoot);
+    }
+
+    function expandAll() {
+      if (!mm || !currentRoot) return;
+      (function unfold(node) {
+        node.payload = node.payload || {};
+        node.payload.fold = 0;
+        if (node.children) node.children.forEach(unfold);
+      })(currentRoot);
+      mm.setData(currentRoot);
+    }
+
     $btnOpen.addEventListener('click', openFolder);
     $btnSave.addEventListener('click', saveFile);
     $btnNew.addEventListener('click', createNewFile);
+    $btnCollapseAll.addEventListener('click', collapseAll);
+    $btnExpandAll.addEventListener('click', expandAll);
     $modeMindmap.addEventListener('click', () => setPreviewMode('mindmap'));
     $modeMarkdown.addEventListener('click', () => setPreviewMode('markdown'));
 
